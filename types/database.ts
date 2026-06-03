@@ -77,7 +77,7 @@ export type Database = {
           id?: string;
           tournament_id: string;
           player_id: string;
-          donor_id: string;
+          donor_id?: string | null;
           donor_nickname: string;
           amount: number;
           message: string;
