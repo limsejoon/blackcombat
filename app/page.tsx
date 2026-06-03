@@ -1,14 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { MapPin, Calendar, Trophy, Star, Flame, Crown, TrendingUp, Archive } from "lucide-react";
+import { useState, useEffect } from "react";
+import { MapPin, Calendar, Trophy, Star, Flame, Crown, TrendingUp, Archive, LogIn, LogOut } from "lucide-react";
 import { EVENT, Fighter } from "@/components/EventData";
 import { CountdownTimer } from "@/components/CountdownTimer";
 import { FighterCard } from "@/components/FighterCard";
 import { CheerSection } from "@/components/CheerSection";
 import { DonationModal } from "@/components/DonationModal";
+import { AuthModal } from "@/components/AuthModal";
 import { PastEventsPage } from "@/components/PastEventsPage";
 import { motion } from "motion/react";
+import { createBrowserClient } from "@supabase/ssr";
+import type { User } from "@supabase/supabase-js";
 
 type TopTab = "upcoming" | "archive";
 type Tab = "fights" | "fighters" | "cheer";
@@ -19,25 +22,30 @@ function getDaysLeft(dateStr: string): number {
 }
 
 const INITIAL_DONATIONS: Record<string, number> = {
-  "jeong-won-hee": 45000,
-  "lee-young-woong": 38000,
-  "patrick-kelvin": 72000,
-  "kim-yul": 18000,
-  "yeo-dong-ju": 31000,
-  "fabricio-azevedo": 14000,
-  "maicon-bruno": 22000,
-  "lee-gang-nam": 19000,
-  "bruno-itamar": 28000,
-  "jang-geun-young": 25000,
-  "lee-jong-gu": 16000,
-  "hong-hee-won": 12000,
-  "heo-sun-haeng": 8000,
-  "ortsa-gudaev": 35000,
-  "park-chan-sol": 11000,
-  "wallison-silva": 29000,
-  "lee-seol-ho": 7000,
-  "son-min": 33000,
+  "jeong-won-hee": 478000,
+  "lee-young-woong": 392000,
+  "patrick-kelvin": 718000,
+  "kim-yul": 181000,
+  "yeo-dong-ju": 309000,
+  "fabricio-azevedo": 141000,
+  "maicon-bruno": 219000,
+  "lee-gang-nam": 188000,
+  "bruno-itamar": 277000,
+  "jang-geun-young": 82000,
+  "lee-jong-gu": 164000,
+  "hong-hee-won": 121000,
+  "heo-sun-haeng": 86000,
+  "ortsa-gudaev": 348000,
+  "park-chan-sol": 109000,
+  "wallison-silva": 291000,
+  "lee-seol-ho": 71000,
+  "son-min": 328000,
 };
+
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export default function App() {
   const [topTab, setTopTab] = useState<TopTab>("upcoming");
@@ -46,14 +54,28 @@ export default function App() {
   const [donations, setDonations] = useState<Record<string, number>>(INITIAL_DONATIONS);
   const [donationTarget, setDonationTarget] = useState<Fighter | null>(null);
   const [lastDonation, setLastDonation] = useState<{ user: string; amount: number; fighterName: string } | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUser(data.user));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   const daysLeft = getDaysLeft(EVENT.date);
   const isCheerOpen = daysLeft <= 10;
   const selectedFight = EVENT.fights.find((f) => f.id === selectedFightId)!;
 
-  const eventDate = new Date(EVENT.date);
-  const dateStr = eventDate.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" });
-  const timeStr = eventDate.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+  const [dateStr, setDateStr] = useState("");
+  const [timeStr, setTimeStr] = useState("");
+  useEffect(() => {
+    const eventDate = new Date(EVENT.date);
+    setDateStr(eventDate.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" }));
+    setTimeStr(eventDate.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
+  }, []);
 
   const fighterPairs = EVENT.fights.map((f) => ({ red: f.fighter1, blue: f.fighter2 }));
   const allFighters = EVENT.fights.flatMap((f) => [f.fighter1, f.fighter2]);
@@ -63,14 +85,26 @@ export default function App() {
     .map((f) => ({ fighter: f, amount: donations[f.id] || 0 }))
     .sort((a, b) => b.amount - a.amount);
 
+  function openDonation(fighter: Fighter) {
+    if (!user) {
+      setShowAuthModal(true);
+      return;
+    }
+    setDonationTarget(fighter);
+  }
+
   function handleDonate(amount: number, _message: string) {
     if (!donationTarget) return;
     setDonations((prev) => ({
       ...prev,
       [donationTarget.id]: (prev[donationTarget.id] || 0) + amount,
     }));
-    setLastDonation({ user: "익명의 팬", amount, fighterName: donationTarget.name });
+    setLastDonation({ user: user?.email ?? "익명의 팬", amount, fighterName: donationTarget.name });
     setTimeout(() => setLastDonation(null), 100);
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
   }
 
   return (
@@ -82,6 +116,30 @@ export default function App() {
       >
         <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 900, fontSize: "1.15rem", color: "#ffffff", letterSpacing: "0.02em" }}>
           FIGHT<span style={{ color: "#e8b400" }}>HUB</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {user ? (
+            <div className="flex items-center gap-2">
+              <span style={{ fontSize: "0.75rem", color: "#aaaaaa", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {user.email}
+              </span>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-white/10 transition-colors"
+                style={{ fontSize: "0.75rem", color: "#aaaaaa" }}
+              >
+                <LogOut size={13} /> 로그아웃
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAuthModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all hover:opacity-90"
+              style={{ background: "#e8b400", color: "#111111", fontWeight: 700, fontSize: "0.8rem" }}
+            >
+              <LogIn size={13} /> 로그인
+            </button>
+          )}
         </div>
         <div className="flex gap-1 p-1 rounded-lg" style={{ background: "rgba(255,255,255,0.08)" }}>
           {([
@@ -263,7 +321,7 @@ export default function App() {
                       💰 {(donations[fight.fighter1.id] || 0).toLocaleString()}원
                     </div>
                     <button
-                      onClick={() => setDonationTarget(fight.fighter1)}
+                      onClick={() => openDonation(fight.fighter1)}
                       className="flex items-center justify-center gap-1 py-1.5 transition-all hover:opacity-90"
                       style={{ background: "#e8b400", color: "#111111", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: "0.7rem", borderRadius: 6 }}
                     >
@@ -307,7 +365,7 @@ export default function App() {
                       {(donations[fight.fighter2.id] || 0).toLocaleString()}원 💰
                     </div>
                     <button
-                      onClick={() => setDonationTarget(fight.fighter2)}
+                      onClick={() => openDonation(fight.fighter2)}
                       className="flex items-center justify-center gap-1 py-1.5 transition-all hover:opacity-90 w-full"
                       style={{ background: "#111111", color: "#e8b400", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: "0.7rem", borderRadius: 6 }}
                     >
@@ -377,7 +435,7 @@ export default function App() {
                         </div>
                       </div>
                       <button
-                        onClick={() => setDonationTarget(fighter)}
+                        onClick={() => openDonation(fighter)}
                         className="shrink-0 px-2.5 py-1 transition-all hover:opacity-90"
                         style={{
                           background: "#111111",
@@ -427,7 +485,7 @@ export default function App() {
                 fighter={selectedFight.fighter1}
                 corner="red"
                 totalDonation={donations[selectedFight.fighter1.id] || 0}
-                onDonate={() => setDonationTarget(selectedFight.fighter1)}
+                onDonate={() => openDonation(selectedFight.fighter1)}
               />
               <div className="flex items-center justify-center sm:hidden">
                 <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 900, fontSize: "1.5rem", color: "#cccccc", letterSpacing: "0.2em" }}>
@@ -438,7 +496,7 @@ export default function App() {
                 fighter={selectedFight.fighter2}
                 corner="blue"
                 totalDonation={donations[selectedFight.fighter2.id] || 0}
-                onDonate={() => setDonationTarget(selectedFight.fighter2)}
+                onDonate={() => openDonation(selectedFight.fighter2)}
               />
             </div>
 
@@ -500,7 +558,7 @@ export default function App() {
               fighters={fighterPairs}
               isOpen={isCheerOpen}
               daysLeft={daysLeft}
-              onOpenDonate={setDonationTarget}
+              onOpenDonate={openDonation}
               externalDonation={lastDonation}
             />
           </motion.div>
@@ -516,6 +574,9 @@ export default function App() {
             handleDonate(amount, message);
           }}
         />
+      )}
+      {showAuthModal && (
+        <AuthModal onClose={() => setShowAuthModal(false)} />
       )}
       </>}
     </div>
