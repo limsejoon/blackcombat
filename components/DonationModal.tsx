@@ -7,7 +7,7 @@ import { Fighter } from "@/components/EventData";
 interface Props {
   fighter: Fighter;
   onClose: () => void;
-  onDonate: (amount: number, message: string) => void;
+  onDonate: (amount: number, message: string) => Promise<void>;
 }
 
 const PRESETS = [1000, 3000, 5000, 10000, 30000, 50000];
@@ -15,13 +15,18 @@ const PRESETS = [1000, 3000, 5000, 10000, 30000, 50000];
 export function DonationModal({ fighter, onClose, onDonate }: Props) {
   const [amount, setAmount] = useState<number | "">("");
   const [message, setMessage] = useState("");
-  const [step, setStep] = useState<"form" | "done">("form");
+  const [step, setStep] = useState<"form" | "loading" | "done" | "error">("form");
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const val = Number(amount);
     if (!val || val < 500) return;
-    onDonate(val, message);
-    setStep("done");
+    setStep("loading");
+    try {
+      await onDonate(val, message);
+      setStep("done");
+    } catch {
+      setStep("error");
+    }
   }
 
   return (
@@ -46,7 +51,30 @@ export function DonationModal({ fighter, onClose, onDonate }: Props) {
           </button>
         </div>
 
-        {step === "form" ? (
+        {step === "loading" ? (
+          <div className="p-8 flex flex-col items-center gap-4">
+            <div
+              className="w-10 h-10 rounded-full border-4 border-t-transparent animate-spin"
+              style={{ borderColor: "#e8b400", borderTopColor: "transparent" }}
+            />
+            <p style={{ fontSize: "0.9rem", color: "#777777" }}>응원을 전송 중입니다...</p>
+          </div>
+        ) : step === "error" ? (
+          <div className="p-8 flex flex-col items-center gap-4 text-center">
+            <div style={{ fontSize: "2rem" }}>😢</div>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, color: "#111111" }}>
+              전송에 실패했습니다
+            </div>
+            <p style={{ fontSize: "0.8rem", color: "#999999" }}>잠시 후 다시 시도해주세요.</p>
+            <button
+              onClick={() => setStep("form")}
+              className="px-6 py-2.5 rounded-xl"
+              style={{ background: "#111111", color: "#e8b400", fontFamily: "'Inter', sans-serif", fontWeight: 700 }}
+            >
+              다시 시도
+            </button>
+          </div>
+        ) : step === "form" ? (
           <div className="p-5 space-y-4">
             <div className="flex items-center gap-3 p-3 rounded-xl" style={{ background: "#f5f2eb", border: "1px solid rgba(232,180,0,0.2)" }}>
               <img src={fighter.photo} alt={fighter.name} className="w-12 h-12 rounded-full object-cover" style={{ border: "2px solid #e8b400" }} />
@@ -127,10 +155,6 @@ export function DonationModal({ fighter, onClose, onDonate }: Props) {
               <Zap size={16} />
               {amount ? `${Number(amount).toLocaleString()}원 응원하기` : "금액을 선택하세요"}
             </button>
-
-            <p style={{ fontSize: "0.7rem", color: "#aaaaaa", textAlign: "center" }}>
-              * 본 도네이션은 데모 시뮬레이션입니다.
-            </p>
           </div>
         ) : (
           <div className="p-8 flex flex-col items-center gap-4 text-center">

@@ -10,7 +10,9 @@ import { DonationModal } from "@/components/DonationModal";
 import { AuthModal } from "@/components/AuthModal";
 import { PastEventsPage } from "@/components/PastEventsPage";
 import { motion } from "motion/react";
-import { createBrowserClient } from "@supabase/ssr";
+import { createClient } from "@/lib/supabase/client";
+import { useDonations } from "@/hooks/useDonations";
+import { TOURNAMENT_ID, FIGHTER_TO_PLAYER_ID } from "@/lib/fighterMap";
 import type { User } from "@supabase/supabase-js";
 
 type TopTab = "upcoming" | "archive";
@@ -21,43 +23,18 @@ function getDaysLeft(dateStr: string): number {
   return Math.ceil(diff / (1000 * 60 * 60 * 24));
 }
 
-const INITIAL_DONATIONS: Record<string, number> = {
-  "jeong-won-hee": 478000,
-  "lee-young-woong": 392000,
-  "patrick-kelvin": 718000,
-  "kim-yul": 181000,
-  "yeo-dong-ju": 309000,
-  "fabricio-azevedo": 141000,
-  "maicon-bruno": 219000,
-  "lee-gang-nam": 188000,
-  "bruno-itamar": 277000,
-  "jang-geun-young": 82000,
-  "lee-jong-gu": 164000,
-  "hong-hee-won": 121000,
-  "heo-sun-haeng": 86000,
-  "ortsa-gudaev": 348000,
-  "park-chan-sol": 109000,
-  "wallison-silva": 291000,
-  "lee-seol-ho": 71000,
-  "son-min": 328000,
-};
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
 export default function App() {
   const [topTab, setTopTab] = useState<TopTab>("upcoming");
   const [activeTab, setActiveTab] = useState<Tab>("fights");
   const [selectedFightId, setSelectedFightId] = useState<string>(EVENT.fights[0].id);
-  const [donations, setDonations] = useState<Record<string, number>>(INITIAL_DONATIONS);
+  const { donations, setDonations } = useDonations();
   const [donationTarget, setDonationTarget] = useState<Fighter | null>(null);
   const [lastDonation, setLastDonation] = useState<{ user: string; amount: number; fighterName: string } | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   useEffect(() => {
+    const supabase = createClient();
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
@@ -93,17 +70,44 @@ export default function App() {
     setDonationTarget(fighter);
   }
 
-  function handleDonate(amount: number, _message: string) {
+  async function handleDonate(amount: number, message: string) {
     if (!donationTarget) return;
+    const playerId = FIGHTER_TO_PLAYER_ID[donationTarget.id];
+    if (!playerId) return;
+
+    // 낙관적 업데이트: API 응답 전 먼저 UI 반영
     setDonations((prev) => ({
       ...prev,
-      [donationTarget.id]: (prev[donationTarget.id] || 0) + amount,
+      [donationTarget.id]: (prev[donationTarget.id] ?? 0) + amount,
     }));
+
+    const res = await fetch("/api/donations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tournament_id: TOURNAMENT_ID,
+        player_id: playerId,
+        donor_nickname: user?.email ?? "익명의 팬",
+        amount,
+        message,
+      }),
+    });
+
+    if (!res.ok) {
+      // 실패 시 롤백
+      setDonations((prev) => ({
+        ...prev,
+        [donationTarget.id]: Math.max(0, (prev[donationTarget.id] ?? 0) - amount),
+      }));
+      throw new Error("donation failed");
+    }
+
     setLastDonation({ user: user?.email ?? "익명의 팬", amount, fighterName: donationTarget.name });
     setTimeout(() => setLastDonation(null), 100);
   }
 
   async function handleLogout() {
+    const supabase = createClient();
     await supabase.auth.signOut();
   }
 
@@ -560,6 +564,7 @@ export default function App() {
               daysLeft={daysLeft}
               onOpenDonate={openDonation}
               externalDonation={lastDonation}
+              tournamentId={TOURNAMENT_ID}
             />
           </motion.div>
         )}
@@ -570,9 +575,7 @@ export default function App() {
         <DonationModal
           fighter={donationTarget}
           onClose={() => setDonationTarget(null)}
-          onDonate={(amount, message) => {
-            handleDonate(amount, message);
-          }}
+          onDonate={(amount, message) => handleDonate(amount, message)}
         />
       )}
       {showAuthModal && (

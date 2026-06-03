@@ -59,6 +59,25 @@ export type Database = {
           image_url?: string | null;
         };
       };
+      comments: {
+        Row: {
+          id: string;
+          tournament_id: string;
+          author_name: string;
+          fighter_slug: string | null;
+          content: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tournament_id: string;
+          author_name: string;
+          fighter_slug?: string | null;
+          content: string;
+          created_at?: string;
+        };
+        Update: never;
+      };
       donations: {
         Row: {
           id: string;
@@ -99,3 +118,4 @@ export type Tournament = Database["public"]["Tables"]["tournaments"]["Row"];
 export type Player = Database["public"]["Tables"]["players"]["Row"];
 export type Donation = Database["public"]["Tables"]["donations"]["Row"];
 export type DonationWithPlayer = Donation & { players: Pick<Player, "name" | "nickname"> };
+export type Comment = Database["public"]["Tables"]["comments"]["Row"];
